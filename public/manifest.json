@@ -1,0 +1,16 @@
+{
+  "name": "Pokédex Neo-Brutalist",
+  "short_name": "Pokédex",
+  "description": "Una aplicación full-stack de Pokédex con batallas, amigos y equipos.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#ec4899",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
