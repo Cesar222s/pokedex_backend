@@ -92,8 +92,13 @@ router.post('/', async (req, res) => {
     const challengerPokemonData = await fetchPokemonData(firstChallengerMember.pokemon_id);
     const opponentPokemonData = await fetchPokemonData(firstOpponentMember.pokemon_id);
 
-    if (!challengerPokemonData || !opponentPokemonData) {
-      return res.status(500).json({ error: 'Failed to fetch Pokémon data' });
+    if (!challengerPokemonData) {
+      console.error(`❌ Error al traer datos para Pokémon del retador ID: ${firstChallengerMember.pokemon_id}`);
+      return res.status(500).json({ error: `Error de PokéAPI: No se pudieron cargar los datos de ${firstChallengerMember.pokemon_id}` });
+    }
+    if (!opponentPokemonData) {
+      console.error(`❌ Error al traer datos para Pokémon del oponente ID: ${firstOpponentMember.pokemon_id}`);
+      return res.status(500).json({ error: `Error de PokéAPI: No se pudieron cargar los datos de ${firstOpponentMember.pokemon_id}` });
     }
 
     // Crear documento de batalla
@@ -122,16 +127,20 @@ router.post('/', async (req, res) => {
     };
 
     const battle = await Battle.create(battleData);
-
-    console.log('   ✅ Batalla creada:', battle._id);
+    console.log('   ✅ Batalla creada ID:', battle._id);
 
     // Notificar al oponente
-    sendNotificationToUser(opponentObjectId.toString(), {
-      title: '¡Fuiste retado a una batalla!',
-      body: `${req.user.username} te desafía con su equipo "${challengerTeam.name}". ¡Acepta el reto!`,
-      icon: '/favicon.svg',
-      data: { url: `/battle/${battle._id}` }
-    });
+    try {
+      sendNotificationToUser(opponentObjectId.toString(), {
+        title: '¡Fuiste retado a una batalla!',
+        body: `${req.user.username} te desafía con su equipo "${challengerTeam.name}". ¡Acepta el reto!`,
+        icon: '/favicon.svg',
+        data: { url: `/battle/${battle._id}` }
+      });
+      console.log('   📲 Notificación enviada al oponente');
+    } catch (pushErr) {
+      console.warn('   ⚠️ Error enviando notificación:', pushErr.message);
+    }
 
     res.status(201).json({
       battle_id: battle._id,
@@ -139,7 +148,31 @@ router.post('/', async (req, res) => {
       message: 'Battle created. Waiting for opponent to join.'
     });
   } catch (err) {
-    console.error('Battle creation error:', err);
+    console.error('❌ Battle creation error:', err);
+    res.status(500).json({ error: `Server error: ${err.message}` });
+  }
+});
+
+// ===================================
+// DELETE /api/battles/:id — RECHAZAR/CANCELAR BATALLA
+// ===================================
+router.delete('/:id', async (req, res) => {
+  try {
+    const currentUserObjectId = new mongoose.Types.ObjectId(req.user.id);
+    const battleId = new mongoose.Types.ObjectId(req.params.id);
+
+    const battle = await Battle.findOne({
+      _id: battleId,
+      $or: [{ challenger_id: currentUserObjectId }, { opponent_id: currentUserObjectId }]
+    });
+
+    if (!battle) return res.status(404).json({ error: 'Battle not found' });
+
+    await Battle.findByIdAndDelete(battleId);
+    console.log(`⚔️  Batalla ${battleId} eliminada/rechazada`);
+    res.json({ message: 'Batalla cancelada correctamente' });
+  } catch (err) {
+    console.error('Delete battle error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../../../Pokedex_frontend/pokedex"
+		},
+		{
+			"path": "../../../backend_pokemon"
+		},
+		{
+			"path": "../.."
+		}
+	],
+	"settings": {}
+}
