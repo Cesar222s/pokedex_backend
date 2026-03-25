@@ -1,5 +1,6 @@
 const express = require('express');
 const fetch = require('node-fetch');
+const mongoose = require('mongoose');
 const authMiddleware = require('../middleware/auth');
 const Friend = require('../models/Friend');
 const Team = require('../models/Team');
@@ -21,25 +22,48 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'opponent_id, challenger_team_id, and opponent_team_id are required' });
     }
 
+    console.log('⚔️ ========== BATALLA INICIADA ==========');
+    console.log('   Retador ID:', req.user.id);
+    console.log('   Oponente ID:', opponent_id);
+    console.log('   Team retador:', challenger_team_id);
+    console.log('   Team oponente:', opponent_team_id);
+
+    // Convertir a ObjectId
+    const opponentObjectId = new mongoose.Types.ObjectId(opponent_id);
+    const currentUserObjectId = new mongoose.Types.ObjectId(req.user.id);
+
     // Verify friendship
     const friendship = await Friend.findOne({
       $or: [
-        { user_id: req.user.id, friend_id: opponent_id },
-        { user_id: opponent_id, friend_id: req.user.id }
+        { user_id: currentUserObjectId, friend_id: opponentObjectId },
+        { user_id: opponentObjectId, friend_id: currentUserObjectId }
       ],
       status: 'accepted'
     });
 
     if (!friendship && req.user.id !== opponent_id) {
+      console.log('   ❌ No son amigos');
       return res.status(403).json({ error: 'You can only battle friends' });
     }
 
     // Verify teams exist and belong to correct users
-    const challengerTeam = await Team.findOne({ _id: challenger_team_id, user_id: req.user.id });
-    const opponentTeam = await Team.findOne({ _id: opponent_team_id, user_id: opponent_id });
+    const challengerTeam = await Team.findOne({ _id: challenger_team_id, user_id: currentUserObjectId });
+    console.log('   Equipo retador encontrado:', !!challengerTeam);
 
-    if (!challengerTeam) return res.status(404).json({ error: 'Challenger team not found' });
-    if (!opponentTeam) return res.status(404).json({ error: 'Opponent team not found' });
+    const opponentTeam = await Team.findOne({ _id: opponent_team_id, user_id: opponentObjectId });
+    console.log('   Equipo oponente encontrado:', !!opponentTeam);
+
+    if (!challengerTeam) {
+      console.log('   ❌ Equipo retador no encontrado');
+      return res.status(404).json({ error: 'Challenger team not found' });
+    }
+
+    if (!opponentTeam) {
+      console.log('   ❌ Equipo oponente no encontrado');
+      console.log('   📍 Buscando con user_id:', opponentObjectId.toString());
+      console.log('   📍 Team IDs en BD:', opponent_team_id);
+      return res.status(404).json({ error: 'Opponent team not found' });
+    }
 
     // Get team members (sorted by slot implicitly if we sort them here)
     const challengerMembers = challengerTeam.members.sort((a,b) => a.slot - b.slot);
@@ -64,12 +88,14 @@ router.post('/', async (req, res) => {
     // Simulate battle
     const result = simulateBattle(team1Data, team2Data);
 
-    const winnerId = result.winner === 'challenger' ? req.user.id : opponent_id;
+    const winnerId = result.winner === 'challenger' ? currentUserObjectId : opponentObjectId;
+
+    console.log('   ⚔️ Batalla simulada - Ganador:', result.winner);
 
     // Save battle
     const battleResult = await Battle.create({
-      challenger_id: req.user.id,
-      opponent_id,
+      challenger_id: currentUserObjectId,
+      opponent_id: opponentObjectId,
       challenger_team_id,
       opponent_team_id,
       winner_id: winnerId,
@@ -98,8 +124,10 @@ router.post('/', async (req, res) => {
 // GET /api/battles — user's battle history
 router.get('/', async (req, res) => {
   try {
+    const currentUserObjectId = new mongoose.Types.ObjectId(req.user.id);
+    
     const battles = await Battle.find({
-      $or: [{ challenger_id: req.user.id }, { opponent_id: req.user.id }]
+      $or: [{ challenger_id: currentUserObjectId }, { opponent_id: currentUserObjectId }]
     })
     .sort('-created_at')
     .populate('challenger_id', 'username')
