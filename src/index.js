@@ -48,8 +48,8 @@ app.use((err, req, res, next) => {
 
 // Serve frontend in production
 app.use(express.static(path.join(__dirname, '../public')));
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public', 'index.html'));
+app.get('/*', (req, res) => {
+  res.send('Ruta no encontrada');
 });
 
 app.listen(PORT, () => {
