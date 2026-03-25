@@ -57,9 +57,8 @@ const battleSchema = new mongoose.Schema({
 });
 
 // Actualizar updated_at antes de guardar
-battleSchema.pre('save', function(next) {
+battleSchema.pre('save', function() {
   this.updated_at = Date.now();
-  next();
 });
 
 module.exports = mongoose.model('Battle', battleSchema);
