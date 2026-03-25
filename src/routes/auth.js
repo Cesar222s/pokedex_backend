@@ -38,14 +38,29 @@ router.post('/register', async (req, res) => {
     }
 
     const password_hash = await bcrypt.hash(password, 10);
-    let friend_code = generateFriendCode();
-    let codeExists = await User.findOne({ friend_code });
-    while (codeExists) {
+    
+    // Generate unique friend code with retry logic
+    let friend_code;
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    do {
       friend_code = generateFriendCode();
-      codeExists = await User.findOne({ friend_code });
+      const codeExists = await User.findOne({ friend_code });
+      if (!codeExists) {
+        console.log(`✅ Generated unique friend_code: ${friend_code} for user: ${email}`);
+        break;
+      }
+      attempts++;
+      console.warn(`⚠️  Friend code collision detected (attempt ${attempts}), regenerating...`);
+    } while (attempts < maxAttempts);
+    
+    if (attempts >= maxAttempts) {
+      return res.status(500).json({ error: 'Could not generate unique friend code' });
     }
 
     const user = await User.create({ email, username, password_hash, friend_code });
+    console.log(`✅ User registered: ${email} with friend_code: ${friend_code}`);
     
     const token = generateToken(user);
 
