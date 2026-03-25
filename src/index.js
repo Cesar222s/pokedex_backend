@@ -16,17 +16,22 @@ const connectDB = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Connect to MongoDB
+// Conectar a MongoDB
 connectDB();
 
-// Middleware
+// Middlewares
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:4173'],
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:4173'
+  ],
   credentials: true
 }));
+
 app.use(express.json());
 
-// Routes
+// Rutas API
 app.use('/api/auth', authRoutes);
 app.use('/api/pokemon', pokemonRoutes);
 app.use('/api/favorites', favoritesRoutes);
@@ -37,21 +42,31 @@ app.use('/api/notifications', notificationsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Error handler
+// Servir frontend (si existe carpeta public)
+app.use(express.static(path.join(__dirname, '../public')));
+
+// ⚠️ IMPORTANTE: Catch-all SIN usar '*'
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Ruta no encontrada'
+  });
+});
+
+// Manejo de errores (si algo falla en el servidor)
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(500).json({
+    error: 'Internal server error'
+  });
 });
 
-// Serve frontend in production
-app.use(express.static(path.join(__dirname, '../public')));
-app.get('/*', (req, res) => {
-  res.send('Ruta no encontrada');
-});
-
+// Iniciar servidor
 app.listen(PORT, () => {
   console.log(`🚀 Pokédex BFF server running on http://localhost:${PORT}`);
 });
