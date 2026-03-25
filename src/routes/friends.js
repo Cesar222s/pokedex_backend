@@ -28,8 +28,19 @@ router.post('/add', async (req, res) => {
     });
 
     if (existing) {
-      if (existing.status === 'accepted') return res.status(409).json({ error: 'Already friends' });
-      return res.status(409).json({ error: 'Friend request already exists' });
+      if (existing.status === 'accepted') {
+        return res.status(409).json({ error: 'Ya son amigos' });
+      }
+      
+      // Si la solicitud la envió la otra persona, la aceptamos automáticamente
+      if (existing.friend_id.toString() === req.user.id) {
+        existing.status = 'accepted';
+        await existing.save();
+        return res.status(200).json({ message: '¡Solicitud aceptada automáticamente!', friend: { id: friend._id, username: friend.username } });
+      }
+
+      // Si la enviaste tú, simplemente está pendiente
+      return res.status(409).json({ error: 'Ya enviaste una solicitud a este usuario (está pendiente)' });
     }
 
     await Friend.create({ user_id: req.user.id, friend_id: friend._id, status: 'pending' });
