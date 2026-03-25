@@ -28,9 +28,15 @@ router.post('/', async (req, res) => {
     console.log('   Team retador:', challenger_team_id);
     console.log('   Team oponente:', opponent_team_id);
 
-    // Convertir a ObjectId
-    const opponentObjectId = new mongoose.Types.ObjectId(opponent_id);
-    const currentUserObjectId = new mongoose.Types.ObjectId(req.user.id);
+    // Convertir a ObjectId con validación
+    let opponentObjectId, currentUserObjectId;
+    try {
+      opponentObjectId = new mongoose.Types.ObjectId(opponent_id);
+      currentUserObjectId = new mongoose.Types.ObjectId(req.user.id);
+    } catch (err) {
+      console.log('   ❌ ID inválido - no es ObjectId válido');
+      return res.status(400).json({ error: 'Invalid opponent_id or user_id format' });
+    }
 
     // Verify friendship
     const friendship = await Friend.findOne({
