@@ -1,254 +1,149 @@
-const CACHE_STATIC_NAME = 'pokedex-static-v1';
-const CACHE_DYNAMIC_NAME = 'pokedex-dynamic-v1';
+﻿// Service Worker con soporte para notificaciones push y offline
 
-// Rutas fijas de la aplicación (App Shell)
-const APP_SHELL = [
+const CACHE_NAME = 'pokedex-v1';
+const urlsToCache = [
   '/',
   '/index.html',
-  '/favicon.ico',
-  '/manifest.json', // (Opcional si decides agregarlo después)
-  'https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
+  '/manifest.json'
 ];
 
-// Mini IndexedDB Wrapper para Backend Sync
-const dbPromise = new Promise((resolve, reject) => {
-  const request = indexedDB.open('PokedexOfflineDB', 1);
-  request.onupgradeneeded = e => {
-    const db = e.target.result;
-    db.createObjectStore('sync-requests', { keyPath: 'id', autoIncrement: true });
-  };
-  request.onsuccess = e => resolve(e.target.result);
-  request.onerror = e => reject(e.target.error);
-});
-
-async function saveOfflineRequest(requestData) {
-  const db = await dbPromise;
-  const tx = db.transaction('sync-requests', 'readwrite');
-  tx.objectStore('sync-requests').add(requestData);
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function getOfflineRequests() {
-  const db = await dbPromise;
-  const tx = db.transaction('sync-requests', 'readonly');
-  const req = tx.objectStore('sync-requests').getAll();
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function deleteOfflineRequest(id) {
-  const db = await dbPromise;
-  const tx = db.transaction('sync-requests', 'readwrite');
-  tx.objectStore('sync-requests').delete(id);
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-self.addEventListener('install', e => {
-  // 1. Instala cache de APP SHELL (rutas fijas)
-  const cacheStatic = caches.open(CACHE_STATIC_NAME)
-    .then(cache => cache.addAll(APP_SHELL));
-
-  e.waitUntil(cacheStatic);
-  // 4. Activar nuevo SW automaticamente
+// Instalar Service Worker
+self.addEventListener('install', event => {
+  console.log('[SW] Instalando Service Worker...');
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        console.log('[SW] Cache abierto');
+        return cache.addAll(urlsToCache).catch(err => {
+          console.warn('[SW] Algunos archivos no pudieron cachearse:', err);
+        });
+      })
+  );
   self.skipWaiting();
 });
 
-self.addEventListener('activate', e => {
-  // 3. Eliminar cache vieja
-  const clearCache = caches.keys().then(keys => {
-    return Promise.all(
-      keys.map(key => {
-        if (key !== CACHE_STATIC_NAME && key !== CACHE_DYNAMIC_NAME) {
-          console.log('[Service Worker] Eliminando cache antigua:', key);
-          return caches.delete(key);
-        }
-      })
-    );
-  });
-
-  e.waitUntil(clearCache);
-  // Activar inmediatamente este SW para los clientes abiertos
+// Activar Service Worker
+self.addEventListener('activate', event => {
+  console.log('[SW] Activando Service Worker...');
+  event.waitUntil(
+    caches.keys().then(cacheNames => {
+      return Promise.all(
+        cacheNames.map(cacheName => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('[SW] Eliminando cache antigua:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
+  );
   self.clients.claim();
 });
 
-self.addEventListener('fetch', e => {
-  if (!e.request.url.startsWith('http')) return;
-  if (e.request.url.includes('/@vite/') || e.request.url.includes('/@vue/') || e.request.url.includes('hot-update')) return;
+// Manejar peticiones
+self.addEventListener('fetch', event => {
+  const { request } = event;
+  const url = new URL(request.url);
 
-  // 1. Si es POST, PUT, o DELETE, intentamos ejecutar y si falla, guardamos en IndexedDB
-  if (e.request.method !== 'GET') {
-    e.respondWith(
-      fetch(e.request.clone()).catch(async (err) => {
-        console.warn('[SW] Falla de conexión en petición de escritura. Guardando en IndexedDB...', err);
-        
-        const bodyText = await e.request.clone().text();
-        const headersObj = {};
-        e.request.headers.forEach((val, key) => headersObj[key] = val);
-        
-        await saveOfflineRequest({
-          url: e.request.url,
-          method: e.request.method,
-          headers: headersObj,
-          body: bodyText
-        });
-
-        // 2. Generar tarea asíncrona (Background Sync)
-        if ('sync' in self.registration) {
-          try {
-            await self.registration.sync.register('sync-offline-requests');
-          } catch (syncErr) {
-            console.error('[SW] No se pudo registrar sync:', syncErr);
-          }
-        }
-
-        return new Response(JSON.stringify({ 
-          offline: true, 
-          message: 'Sin internet. La petición se sincronizará cuando regreses a estar en línea.' 
-        }), {
-          headers: { 'Content-Type': 'application/json' },
-          status: 202
-        });
-      })
-    );
+  // No cachear cambios de host
+  if (url.origin !== location.origin) {
     return;
   }
 
-  // Estrategia: Cache First con Network Fallback para GETs
-  const respuesta = caches.match(e.request).then(res => {
-    if (res) {
-      // Retorna desde cache
-      return res;
-    }
-
-    // 2. Carga cache dinámico (las rutas que no estén en el APP SHELL se agregan al cache dinámico)
-    // 5. Soporte offline interceptando y manejando la petición a la red
-    return fetch(e.request).then(newRes => {
-      // Guardar en cache dinámico para próxima vez
-      return caches.open(CACHE_DYNAMIC_NAME).then(cache => {
-        cache.put(e.request, newRes.clone());
-        return newRes;
-      });
-    }).catch(err => {
-      console.warn('[Service Worker] Error de red / Offline detectado:', err);
-      // Si falla la red y no está en caché dinámico ni estático, retorna error o página fallback.
-    });
-  });
-
-  e.respondWith(respuesta);
-});
-
-// Listener SYNC para ejecutar las peticiones guardadas
-self.addEventListener('sync', e => {
-  console.log('[SW] Evento Sync detectado:', e.tag);
-  if (e.tag === 'sync-offline-requests') {
-    e.waitUntil(
-      getOfflineRequests().then(requests => {
-        return Promise.all(requests.map(async reqData => {
-          try {
-            console.log('[SW] Sincronizando petición a:', reqData.url);
-            const fetchRes = await fetch(reqData.url, {
-              method: reqData.method,
-              headers: reqData.headers,
-              body: reqData.body
+  // Estrategia: intentar network primero, si falla usar cache
+  event.respondWith(
+    fetch(request)
+      .then(response => {
+        if (!response || response.status !== 200 || response.type === 'error') {
+          return response;
+        }
+        
+        // Clonar y guardar en cache
+        const responseToCache = response.clone();
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(request, responseToCache);
+        });
+        
+        return response;
+      })
+      .catch(() => {
+        return caches.match(request)
+          .then(response => {
+            return response || new Response('Offline - No se encontró en cache', {
+              status: 503,
+              statusText: 'Unavailable'
             });
-            // Si funciona o el servidor responde que la petición era mala (400, etc), se completó el intento
-            if (fetchRes.ok || fetchRes.status >= 400) {
-              console.log('[SW] Petición sincronizada, eliminando de IndexedDB (ID:', reqData.id, ')');
-              await deleteOfflineRequest(reqData.id);
-            }
-          } catch(err) {
-            console.error('[SW] Falló la sincronización de la petición en background, se intentará luego:', err);
-          }
-        }));
-      })
-    );
-  }
-});
-
-// Listener para Push Notifications enviadas desde el backend
-self.addEventListener('push', e => {
-  console.log('\n🔔 ========== PUSH EVENT RECEIVED ==========');
-  console.log('[SW] Push event triggered');
-  
-  let data = { 
-    title: 'Notificación de Pokédex', 
-    body: 'Tienes una nueva alerta.', 
-    icon: '/favicon.svg' 
-  };
-  
-  if (e.data) {
-    try {
-      data = e.data.json();
-      console.log('[SW] Parsed JSON data:', JSON.stringify(data));
-    } catch(err) {
-      data.body = e.data.text();
-      console.log('[SW] Parsed text data:', data.body);
-    }
-  } else {
-    console.warn('[SW] No data in push event');
-  }
-
-  console.log('[SW] Title:', data.title);
-  console.log('[SW] Body:', data.body);
-  console.log('[SW] Icon:', data.icon);
-
-  const options = {
-    body: data.body,
-    icon: data.icon || '/favicon.svg',
-    badge: '/favicon.svg',
-    vibrate: [100, 50, 100],
-    data: { url: data.data?.url || '/' },
-    tag: 'pokedex-notification',
-    requireInteraction: true
-  };
-
-  console.log('[SW] Attempting to show notification...');
-  e.waitUntil(
-    self.registration.showNotification(data.title, options)
-      .then(() => {
-        console.log('✅ Notification displayed successfully!');
-        console.log('🔔 ======================================\n');
-      })
-      .catch(err => {
-        console.error('❌ Error showing notification:', err.message);
-        console.error('   Error type:', err.name);
-        console.error('🔔 ======================================\n');
+          });
       })
   );
 });
 
-// Listener cuando el usuario hace clic en la notificación
-self.addEventListener('notificationclick', e => {
-  console.log('[SW] Notification clicked:', e.notification.tag);
-  console.log('[SW] Opening URL:', e.notification.data.url);
-  e.notification.close();
+// Escuchar notificaciones push
+self.addEventListener('push', event => {
+  console.log('🔔 PUSH EVENT RECIBIDO');
   
-  e.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-      // Buscar si ya hay una ventana abierta
-      for (let i = 0; i < clientList.length; i++) {
-        const client = clientList[i];
-        if (client.url === '/' && 'focus' in client) {
-          console.log('[SW] Found existing client, focusing and navigating...');
-          client.focus();
-          client.navigate(e.notification.data.url);
-          return;
+  let notificationData = {
+    title: 'Notificación Pokédex',
+    body: 'Tienes una nueva notificación',
+    icon: '/favicon.svg'
+  };
+
+  if (event.data) {
+    try {
+      notificationData = event.data.json();
+      console.log('📨 Datos JSON parseados:', notificationData);
+    } catch (e) {
+      notificationData.body = event.data.text();
+      console.log('📨 Datos de texto parseados:', notificationData.body);
+    }
+  }
+
+  console.log('📌 Mostrando notificación:', notificationData.title, '-', notificationData.body);
+
+  const options = {
+    body: notificationData.body,
+    icon: notificationData.icon || '/favicon.svg',
+    badge: '/favicon.svg',
+    vibrate: [100, 50, 100],
+    data: {
+      url: notificationData.data?.url || '/amigos'
+    },
+    tag: 'pokedex-notification',
+    requireInteraction: true
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(notificationData.title, options)
+      .then(() => {
+        console.log('✅ Notificación mostrada exitosamente');
+      })
+      .catch(error => {
+        console.error('❌ Error mostrando notificación:', error);
+      })
+  );
+});
+
+// Manejar clic en notificación
+self.addEventListener('notificationclick', event => {
+  console.log('👆 Notificación clickeada');
+  event.notification.close();
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then(clientList => {
+        // Buscar ventana existente
+        for (let client of clientList) {
+          if (client.url === '/' && 'focus' in client) {
+            console.log('🔍 Ventana encontrada, navegando a:', event.notification.data.url);
+            client.focus();
+            return client.navigate(event.notification.data.url);
+          }
         }
-      }
-      // Si no hay ventana, abrir una nueva
-      if (clients.openWindow) {
-        console.log('[SW] Opening new window with URL:', e.notification.data.url);
-        return clients.openWindow(e.notification.data.url);
-      }
-    })
+        // Si no hay ventana, abrir una nueva
+        if (clients.openWindow) {
+          console.log('🔓 Abriendo nueva ventana a:', event.notification.data.url);
+          return clients.openWindow(event.notification.data.url);
+        }
+      })
   );
 });
