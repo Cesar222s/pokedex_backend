@@ -97,14 +97,28 @@ router.post('/add', async (req, res) => {
 // GET /api/friends
 router.get('/', async (req, res) => {
   try {
+    console.log(`\n📋 ========== FETCHING FRIENDS ==========`);
+    console.log(`   Current user ID: ${req.user.id}`);
+
+    // Convert req.user.id to ObjectId for proper comparison
+    const currentUserId = mongoose.Types.ObjectId.isValid(req.user.id) 
+      ? new mongoose.Types.ObjectId(req.user.id)
+      : req.user.id;
+
     const friends = await Friend.find({
-      $or: [{ user_id: req.user.id }, { friend_id: req.user.id }],
+      $or: [
+        { user_id: currentUserId },
+        { friend_id: currentUserId }
+      ],
       status: 'accepted'
     }).populate('user_id', 'username friend_code').populate('friend_id', 'username friend_code');
 
+    console.log(`   Found ${friends.length} accepted friend(s)`);
+
     const mapped = friends.map(f => {
-      const isSender = f.user_id._id.toString() === req.user.id;
+      const isSender = f.user_id._id.toString() === currentUserId.toString();
       const friendUser = isSender ? f.friend_id : f.user_id;
+      console.log(`   - Friend: ${friendUser.username} (ID: ${friendUser._id})`);
       return {
         id: friendUser._id,
         friendship_id: f._id,
@@ -113,9 +127,11 @@ router.get('/', async (req, res) => {
       };
     });
 
+    console.log(`✅ Returning ${mapped.length} friends to user`);
+    console.log(`📋 ===================================\n`);
     res.json({ friends: mapped });
   } catch (err) {
-    console.error('Get friends error:', err);
+    console.error('❌ Get friends error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -123,19 +139,36 @@ router.get('/', async (req, res) => {
 // GET /api/friends/pending
 router.get('/pending', async (req, res) => {
   try {
-    const pending = await Friend.find({ friend_id: req.user.id, status: 'pending' })
-      .populate('user_id', 'username friend_code');
+    console.log(`\n⏳ ========== FETCHING PENDING REQUESTS ==========`);
+    console.log(`   Current user ID: ${req.user.id}`);
 
-    const mapped = pending.map(f => ({
-      id: f._id,
-      username: f.user_id.username,
-      friend_code: f.user_id.friend_code,
-      created_at: f.created_at
-    }));
+    // Convert req.user.id to ObjectId for proper comparison
+    const currentUserId = mongoose.Types.ObjectId.isValid(req.user.id) 
+      ? new mongoose.Types.ObjectId(req.user.id)
+      : req.user.id;
 
+    const pending = await Friend.find({ 
+      friend_id: currentUserId, 
+      status: 'pending' 
+    }).populate('user_id', 'username friend_code');
+
+    console.log(`   Found ${pending.length} pending request(s)`);
+
+    const mapped = pending.map(f => {
+      console.log(`   - From: ${f.user_id.username} (ID: ${f.user_id._id})`);
+      return {
+        id: f._id,
+        username: f.user_id.username,
+        friend_code: f.user_id.friend_code,
+        created_at: f.created_at
+      };
+    });
+
+    console.log(`✅ Returning ${mapped.length} pending requests`);
+    console.log(`⏳ =======================================\n`);
     res.json({ pending: mapped });
   } catch (err) {
-    console.error('Get pending error:', err);
+    console.error('❌ Get pending error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
