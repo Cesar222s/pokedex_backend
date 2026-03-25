@@ -389,32 +389,28 @@ self.addEventListener('push', e => {
   );
 });
 
-// Manejar clic en notificación
+// Listener cuando el usuario hace clic en la notificación
 self.addEventListener('notificationclick', e => {
   console.log('[SW] Notification clicked:', e.notification.tag);
   console.log('[SW] Opening URL:', e.notification.data.url);
   e.notification.close();
   
-  const urlToOpen = e.notification.data.url || '/';
-  
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-      // Buscar si ya hay una ventana abierta de esta app
+      // Buscar si ya hay una ventana abierta
       for (let i = 0; i < clientList.length; i++) {
         const client = clientList[i];
-        // Cualquier ventana del mismo origen es válida
-        if (client.url.includes(self.location.origin)) {
-          console.log('[SW] ✅ Ventana encontrada, enfocando y navegando a:', urlToOpen);
+        if (client.url === '/' && 'focus' in client) {
+          console.log('[SW] Found existing client, focusing and navigating...');
           client.focus();
-          client.navigate(urlToOpen);
+          client.navigate(e.notification.data.url);
           return;
         }
       }
-      
       // Si no hay ventana, abrir una nueva
       if (clients.openWindow) {
-        console.log('[SW] 🔓 Abriendo nueva ventana a:', urlToOpen);
-        return clients.openWindow(urlToOpen);
+        console.log('[SW] Opening new window with URL:', e.notification.data.url);
+        return clients.openWindow(e.notification.data.url);
       }
     })
   );
