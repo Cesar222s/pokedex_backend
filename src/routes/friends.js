@@ -13,10 +13,10 @@ router.post('/add', async (req, res) => {
     const { friend_code } = req.body;
     if (!friend_code) return res.status(400).json({ error: 'friend_code is required' });
 
-    // Normalize friend_code: trim spaces and convert to uppercase for matching
+    // Normalize friend_code: trim spaces and convert to uppercase for matching (case-insensitive search)
     const normalizedCode = friend_code.trim().toUpperCase();
     
-    const friend = await User.findOne({ friend_code: normalizedCode }).select('username friend_code');
+    const friend = await User.findOne({ friend_code: { $regex: `^${normalizedCode}$`, $options: 'i' } }).select('username friend_code');
     if (!friend) {
       console.error(`Friend not found with code: "${normalizedCode}" (original: "${friend_code}")`);
       return res.status(404).json({ error: 'User not found with that code' });
