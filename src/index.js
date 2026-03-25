@@ -51,11 +51,11 @@ app.get('/api/health', (req, res) => {
 // Servir frontend (si existe carpeta public)
 app.use(express.static(path.join(__dirname, '../public')));
 
-// ⚠️ IMPORTANTE: Catch-all SIN usar '*'
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Ruta no encontrada'
-  });
+// ⚠️ IMPORTANTE: Para que Vue (Single Page Application) funcione
+// TODAS las rutas no reconocidas DEBEN devolver el index.html.
+// Si devuelves un error 404, la página en el celular se rompe al recargar o al entrar a sub-rutas.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public', 'index.html'));
 });
 
 // Manejo de errores (si algo falla en el servidor)
