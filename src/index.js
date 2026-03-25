@@ -1,5 +1,10 @@
 require('dotenv').config();
 
+// ==========================================
+// POKÉDEX PRO - FULL STACK PWA & BATTLE SYSTEM
+// Features: App Shell, Dynamic Cache, Offline Sync (IndexedDB),
+// Push Notifications, Live Turn-based Battles.
+// ==========================================
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
