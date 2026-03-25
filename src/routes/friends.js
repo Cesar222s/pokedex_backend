@@ -82,7 +82,7 @@ router.post('/add', async (req, res) => {
       title: '¡Nueva solicitud de amistad!',
       body: `${req.user.username} quiere ser tu amigo en Pokédex.`,
       icon: '/favicon.svg',
-      data: { url: '/amigos' }  // Abre la página de amigos directamente
+      data: { url: '/friends' }  // Abre la página de amigos - ruta correcta en Vue Router
     });
 
     console.log(`✅ Friend request sent successfully to ${friend.username}`);
