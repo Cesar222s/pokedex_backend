@@ -81,7 +81,8 @@ router.post('/add', async (req, res) => {
     sendNotificationToUser(friend._id.toString(), {
       title: '¡Nueva solicitud de amistad!',
       body: `${req.user.username} quiere ser tu amigo en Pokédex.`,
-      icon: '/favicon.svg'
+      icon: '/favicon.svg',
+      data: { url: '/amigos' }  // Abre la página de amigos directamente
     });
 
     console.log(`✅ Friend request sent successfully to ${friend.username}`);

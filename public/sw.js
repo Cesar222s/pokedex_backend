@@ -206,7 +206,7 @@ self.addEventListener('push', e => {
     icon: data.icon || '/favicon.svg',
     badge: '/favicon.svg',
     vibrate: [100, 50, 100],
-    data: { url: '/' },
+    data: { url: data.data?.url || '/' },
     tag: 'pokedex-notification',
     requireInteraction: true
   };
@@ -229,8 +229,26 @@ self.addEventListener('push', e => {
 // Listener cuando el usuario hace clic en la notificación
 self.addEventListener('notificationclick', e => {
   console.log('[SW] Notification clicked:', e.notification.tag);
+  console.log('[SW] Opening URL:', e.notification.data.url);
   e.notification.close();
+  
   e.waitUntil(
-    clients.openWindow(e.notification.data.url)
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      // Buscar si ya hay una ventana abierta
+      for (let i = 0; i < clientList.length; i++) {
+        const client = clientList[i];
+        if (client.url === '/' && 'focus' in client) {
+          console.log('[SW] Found existing client, focusing and navigating...');
+          client.focus();
+          client.navigate(e.notification.data.url);
+          return;
+        }
+      }
+      // Si no hay ventana, abrir una nueva
+      if (clients.openWindow) {
+        console.log('[SW] Opening new window with URL:', e.notification.data.url);
+        return clients.openWindow(e.notification.data.url);
+      }
+    })
   );
 });
