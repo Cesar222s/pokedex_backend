@@ -51,10 +51,11 @@ app.get('/api/health', (req, res) => {
 // Servir frontend (si existe carpeta public)
 app.use(express.static(path.join(__dirname, '../public')));
 
-// ⚠️ IMPORTANTE: Para que Vue (Single Page Application) funcione
-// TODAS las rutas no reconocidas DEBEN devolver el index.html.
-// Si devuelves un error 404, la página en el celular se rompe al recargar o al entrar a sub-rutas.
-app.get('*', (req, res) => {
+// ⚠️ IMPORTANTE: Para que Vue (Single Page Application) funcione en Express 5.x
+// Dado que Express 5 ya no usa '*' para comodines absolutos en path-to-regexp v8,
+// la mejor práctica es usar un app.use() al final de las rutas para devolver el index.html.
+app.use((req, res) => {
+  // Evitamos responder con JSON o 404 para que la PWA y Vue Router tomen el control.
   res.sendFile(path.join(__dirname, '../public', 'index.html'));
 });
 
