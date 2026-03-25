@@ -176,32 +176,59 @@ self.addEventListener('sync', e => {
 
 // Listener para Push Notifications enviadas desde el backend
 self.addEventListener('push', e => {
-  console.log('[SW] Push recibido');
-  let data = { title: 'Notificación de Pokédex', body: 'Tienes una nueva alerta.', icon: '/favicon.svg' };
+  console.log('\n🔔 ========== PUSH EVENT RECEIVED ==========');
+  console.log('[SW] Push event triggered');
+  
+  let data = { 
+    title: 'Notificación de Pokédex', 
+    body: 'Tienes una nueva alerta.', 
+    icon: '/favicon.svg' 
+  };
   
   if (e.data) {
     try {
       data = e.data.json();
+      console.log('[SW] Parsed JSON data:', JSON.stringify(data));
     } catch(err) {
       data.body = e.data.text();
+      console.log('[SW] Parsed text data:', data.body);
     }
+  } else {
+    console.warn('[SW] No data in push event');
   }
+
+  console.log('[SW] Title:', data.title);
+  console.log('[SW] Body:', data.body);
+  console.log('[SW] Icon:', data.icon);
 
   const options = {
     body: data.body,
     icon: data.icon || '/favicon.svg',
     badge: '/favicon.svg',
     vibrate: [100, 50, 100],
-    data: { url: '/' }
+    data: { url: '/' },
+    tag: 'pokedex-notification',
+    requireInteraction: true
   };
 
+  console.log('[SW] Attempting to show notification...');
   e.waitUntil(
     self.registration.showNotification(data.title, options)
+      .then(() => {
+        console.log('✅ Notification displayed successfully!');
+        console.log('🔔 ======================================\n');
+      })
+      .catch(err => {
+        console.error('❌ Error showing notification:', err.message);
+        console.error('   Error type:', err.name);
+        console.error('🔔 ======================================\n');
+      })
   );
 });
 
 // Listener cuando el usuario hace clic en la notificación
 self.addEventListener('notificationclick', e => {
+  console.log('[SW] Notification clicked:', e.notification.tag);
   e.notification.close();
   e.waitUntil(
     clients.openWindow(e.notification.data.url)
