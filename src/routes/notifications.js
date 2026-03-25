@@ -12,32 +12,48 @@ router.post('/subscribe', async (req, res) => {
   try {
     const { endpoint, keys } = req.body;
 
-    console.log(`📱 Push subscription request received`);
+    console.log(`\n📱 ========== PUSH SUBSCRIPTION REQUEST ==========`);
     console.log(`   User ID: ${req.user.id}`);
-    console.log(`   Endpoint: ${endpoint?.substring(0, 50)}...`);
+    console.log(`   User email: ${req.user.email}`);
+    console.log(`   Endpoint: ${endpoint?.substring(0, 80)}...`);
+    console.log(`   Keys p256dh: ${keys?.p256dh?.substring(0, 30)}...`);
+    console.log(`   Keys auth: ${keys?.auth?.substring(0, 30)}...`);
 
     if (!endpoint || !keys) {
-      console.warn(`⚠️  Missing endpoint or keys in subscription`);
+      console.warn(`⚠️  ❌ Missing endpoint or keys in subscription`);
       return res.status(400).json({ error: 'Endpoint and keys are required' });
     }
 
     // Convert req.user.id to ObjectId if it's a string
     const currentUserId = mongoose.Types.ObjectId.isValid(req.user.id) 
-      ? req.user.id 
-      : new mongoose.Types.ObjectId(req.user.id);
+      ? new mongoose.Types.ObjectId(req.user.id)
+      : req.user.id;
 
-    // Upsert subscription
-    const savedSub = await Subscription.findOneAndUpdate(
-      { endpoint },
-      { user_id: currentUserId, keys },
-      { upsert: true, new: true }
-    );
+    console.log(`   Converting user ID: ${req.user.id} → ${currentUserId}`);
 
-    console.log(`✅ Push subscription saved for user: ${req.user.email} (subscription ID: ${savedSub._id})`);
-    res.status(201).json({ message: 'Subscription saved' });
+    // Delete old subscription for this endpoint first
+    await Subscription.deleteMany({ endpoint });
+    console.log(`   🗑️  Cleaned up old subscriptions for this endpoint`);
+
+    // Create new subscription
+    const savedSub = await Subscription.create({
+      user_id: currentUserId,
+      endpoint,
+      keys
+    });
+
+    console.log(`✅ PUSH SUBSCRIPTION SAVED SUCCESSFULLY`);
+    console.log(`   Subscription ID: ${savedSub._id}`);
+    console.log(`   User ID stored: ${savedSub.user_id}`);
+    console.log(`================================================\n`);
+
+    res.status(201).json({ message: 'Subscription saved', subscriptionId: savedSub._id });
   } catch (err) {
-    console.error(`❌ Subscribe error:`, err.message);
-    console.error(`   Stack:`, err.stack);
+    console.error(`\n❌ ========== SUBSCRIPTION ERROR ==========`);
+    console.error(`   Error message: ${err.message}`);
+    console.error(`   Error type: ${err.name}`);
+    console.error(`   Stack: ${err.stack}`);
+    console.error(`==========================================\n`);
     res.status(500).json({ error: 'Server error' });
   }
 });
