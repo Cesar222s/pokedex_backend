@@ -111,10 +111,11 @@ router.post('/', async (req, res) => {
     });
 
     // Send Push Notification asynchronously to the opponent
-    sendNotificationToUser(opponent_id.toString(), {
+    sendNotificationToUser(opponentObjectId.toString(), {
       title: '¡Fuiste retado a una batalla!',
       body: `${req.user.username} te ha desafiado con su equipo "${challengerTeam.name}". ¡Revisa el historial para ver quién ganó!`,
-      icon: '/favicon.svg'
+      icon: '/favicon.svg',
+      data: { url: '/battle' }  // Navega a la sección de batallas
     });
 
     res.status(201).json({
