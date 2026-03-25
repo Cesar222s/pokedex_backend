@@ -41,8 +41,8 @@ router.post('/', async (req, res) => {
   try {
     const { opponent_id, challenger_team_id, opponent_team_id } = req.body;
 
-    if (!opponent_id || !challenger_team_id || !opponent_team_id) {
-      return res.status(400).json({ error: 'opponent_id, challenger_team_id, and opponent_team_id are required' });
+    if (!opponent_id || !challenger_team_id) {
+      return res.status(400).json({ error: 'opponent_id and challenger_team_id are required' });
     }
 
     console.log('⚔️ ========== BATALLA EN VIVO INICIADA ==========');
@@ -54,7 +54,7 @@ router.post('/', async (req, res) => {
       opponentObjectId = new mongoose.Types.ObjectId(opponent_id);
       currentUserObjectId = new mongoose.Types.ObjectId(req.user.id);
       challengerTeamObjectId = new mongoose.Types.ObjectId(challenger_team_id);
-      opponentTeamObjectId = new mongoose.Types.ObjectId(opponent_team_id);
+      if (opponent_team_id) opponentTeamObjectId = new mongoose.Types.ObjectId(opponent_team_id);
     } catch (err) {
       console.log('   ❌ ID inválido');
       return res.status(400).json({ error: 'Invalid IDs format' });
@@ -75,30 +75,42 @@ router.post('/', async (req, res) => {
 
     // Verificar equipos
     const challengerTeam = await Team.findOne({ _id: challengerTeamObjectId, user_id: currentUserObjectId });
-    const opponentTeam = await Team.findOne({ _id: opponentTeamObjectId, user_id: opponentObjectId });
-
-    if (!challengerTeam || !opponentTeam) {
-      return res.status(404).json({ error: 'One or both teams not found' });
+    if (!challengerTeam || challengerTeam.members.length < 6) {
+      return res.status(400).json({ error: 'Challenger team must have 6 members' });
     }
 
-    if (challengerTeam.members.length === 0 || opponentTeam.members.length === 0) {
-      return res.status(400).json({ error: 'Teams must have at least one Pokémon' });
+    let opponentTeam = null;
+    if (opponentTeamObjectId) {
+      opponentTeam = await Team.findOne({ _id: opponentTeamObjectId, user_id: opponentObjectId });
+      if (!opponentTeam || opponentTeam.members.length < 6) {
+        return res.status(400).json({ error: 'Opponent team must have 6 members' });
+      }
     }
 
-    // Obtener datos del primer Pokémon de cada equipo de PokeAPI
+    console.log(`   Equipos validados. Cargando datos iniciales...`);
+
+    // Obtener datos del primer Pokémon del retador
     const firstChallengerMember = challengerTeam.members.sort((a, b) => a.slot - b.slot)[0];
-    const firstOpponentMember = opponentTeam.members.sort((a, b) => a.slot - b.slot)[0];
-
     const challengerPokemonData = await fetchPokemonData(firstChallengerMember.pokemon_id);
-    const opponentPokemonData = await fetchPokemonData(firstOpponentMember.pokemon_id);
 
     if (!challengerPokemonData) {
       console.error(`❌ Error al traer datos para Pokémon del retador ID: ${firstChallengerMember.pokemon_id}`);
       return res.status(500).json({ error: `Error de PokéAPI: No se pudieron cargar los datos de ${firstChallengerMember.pokemon_id}` });
     }
-    if (!opponentPokemonData) {
-      console.error(`❌ Error al traer datos para Pokémon del oponente ID: ${firstOpponentMember.pokemon_id}`);
-      return res.status(500).json({ error: `Error de PokéAPI: No se pudieron cargar los datos de ${firstOpponentMember.pokemon_id}` });
+
+    let opponentActivePokemon = null;
+    if (opponentTeam) {
+      const firstOpponentMember = opponentTeam.members.sort((a, b) => a.slot - b.slot)[0];
+      const opponentPokemonData = await fetchPokemonData(firstOpponentMember.pokemon_id);
+      if (opponentPokemonData) {
+        opponentActivePokemon = {
+          pokemon_id: firstOpponentMember.pokemon_id,
+          pokemon_name: opponentPokemonData.name,
+          hp: opponentPokemonData.stats.find(s => s.stat.name === 'hp').base_stat,
+          max_hp: opponentPokemonData.stats.find(s => s.stat.name === 'hp').base_stat,
+          status: 'normal'
+        };
+      }
     }
 
     // Crear documento de batalla
@@ -106,8 +118,8 @@ router.post('/', async (req, res) => {
       challenger_id: currentUserObjectId,
       opponent_id: opponentObjectId,
       challenger_team_id: challengerTeamObjectId,
-      opponent_team_id: opponentTeamObjectId,
-      status: 'waiting_for_opponent',
+      opponent_team_id: opponentTeamObjectId || null,
+      status: opponentTeamObjectId ? 'active' : 'waiting_for_opponent',
       current_turn: 1,
       current_player_id: currentUserObjectId,
       challenger_active_pokemon: {
@@ -117,13 +129,9 @@ router.post('/', async (req, res) => {
         max_hp: challengerPokemonData.stats.find(s => s.stat.name === 'hp').base_stat,
         status: 'normal'
       },
-      opponent_active_pokemon: {
-        pokemon_id: firstOpponentMember.pokemon_id,
-        pokemon_name: opponentPokemonData.name,
-        hp: opponentPokemonData.stats.find(s => s.stat.name === 'hp').base_stat,
-        max_hp: opponentPokemonData.stats.find(s => s.stat.name === 'hp').base_stat,
-        status: 'normal'
-      }
+      opponent_active_pokemon: opponentActivePokemon,
+      challenger_active_slot: 0,
+      opponent_active_slot: 0
     };
 
     const battle = await Battle.create(battleData);
@@ -133,7 +141,7 @@ router.post('/', async (req, res) => {
     try {
       sendNotificationToUser(opponentObjectId.toString(), {
         title: '¡Fuiste retado a una batalla!',
-        body: `${req.user.username} te desafía con su equipo "${challengerTeam.name}". ¡Acepta el reto!`,
+        body: `${req.user.username} te desafía. ¡Acepta el reto y elige tu equipo!`,
         icon: '/favicon.svg',
         data: { url: `/battle/${battle._id}` }
       });
@@ -144,12 +152,73 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({
       battle_id: battle._id,
-      status: 'waiting_for_opponent',
-      message: 'Battle created. Waiting for opponent to join.'
+      status: battle.status,
+      message: battle.status === 'active' ? 'Battle started' : 'Invitation sent. Waiting for opponent to accept.'
     });
   } catch (err) {
     console.error('❌ Battle creation error:', err);
     res.status(500).json({ error: `Server error: ${err.message}` });
+  }
+});
+
+// ===================================
+// POST /api/battles/:id/accept — ACEPTAR RETO Y ELEGIR EQUIPO
+// ===================================
+router.post('/:id/accept', async (req, res) => {
+  try {
+    const { team_id } = req.body;
+    if (!team_id) return res.status(400).json({ error: 'team_id is required' });
+
+    console.log(`⚔️  Aceptando batalla ${req.params.id}...`);
+
+    const battle = await Battle.findOne({ 
+      _id: req.params.id, 
+      opponent_id: req.user.id,
+      status: 'waiting_for_opponent' 
+    });
+
+    if (!battle) return res.status(404).json({ error: 'Battle not found or already active' });
+
+    // Validar equipo del oponente
+    const opponentTeam = await Team.findOne({ _id: team_id, user_id: req.user.id });
+    if (!opponentTeam || opponentTeam.members.length < 6) {
+      return res.status(400).json({ error: 'Your team must have 6 members' });
+    }
+
+    // Cargar datos del primer Pokémon del oponente
+    const firstOpponentMember = opponentTeam.members.sort((a, b) => a.slot - b.slot)[0];
+    const pokemonData = await fetchPokemonData(firstOpponentMember.pokemon_id);
+    
+    if (!pokemonData) {
+      return res.status(500).json({ error: 'Failed to fetch Pokémon data from PokéAPI' });
+    }
+
+    // Actualizar batalla
+    battle.opponent_team_id = team_id;
+    battle.opponent_active_pokemon = {
+      pokemon_id: firstOpponentMember.pokemon_id,
+      pokemon_name: pokemonData.name,
+      hp: pokemonData.stats.find(s => s.stat.name === 'hp').base_stat,
+      max_hp: pokemonData.stats.find(s => s.stat.name === 'hp').base_stat,
+      status: 'normal'
+    };
+    battle.status = 'active';
+    await battle.save();
+
+    console.log(`✅ Batalla ${battle._id} activada!`);
+
+    // Notificar al retador
+    sendNotificationToUser(battle.challenger_id.toString(), {
+      title: '¡Reto Aceptado!',
+      body: `${req.user.username} aceptó tu reto y la batalla ha comenzado.`,
+      icon: '/favicon.svg',
+      data: { url: `/battle/${battle._id}` }
+    });
+
+    res.json({ message: 'Battle accepted', battle_id: battle._id });
+  } catch (err) {
+    console.error('Accept battle error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
