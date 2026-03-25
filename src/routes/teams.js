@@ -1,6 +1,8 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const authMiddleware = require('../middleware/auth');
 const Team = require('../models/Team');
+const Friend = require('../models/Friend');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -17,6 +19,53 @@ router.get('/', async (req, res) => {
     }));
     res.json({ teams: mapped });
   } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/teams/friend/:friend_id - obtener equipos de un amigo
+router.get('/friend/:friend_id', async (req, res) => {
+  try {
+    const { friend_id } = req.params;
+    const currentUserId = new mongoose.Types.ObjectId(req.user.id);
+    const friendObjectId = new mongoose.Types.ObjectId(friend_id);
+
+    console.log('📋 ========== FETCHING FRIEND TEAMS ==========');
+    console.log('   Current user ID:', currentUserId.toString());
+    console.log('   Friend ID:', friendObjectId.toString());
+
+    // Verificar que sean amigos
+    const friendship = await Friend.findOne({
+      $or: [
+        { user_id: currentUserId, friend_id: friendObjectId },
+        { user_id: friendObjectId, friend_id: currentUserId }
+      ],
+      status: 'accepted'
+    });
+
+    if (!friendship) {
+      console.log('   ❌ No son amigos');
+      return res.status(403).json({ error: 'Puedes ver equipos solo de amigos aceptados' });
+    }
+
+    // Obtener los equipos del amigo
+    const teams = await Team.find({ user_id: friendObjectId }).sort('-created_at');
+    console.log('   Encontrados', teams.length, 'equipos');
+
+    const mapped = teams.map(t => ({
+      id: t._id,
+      user_id: t.user_id,
+      name: t.name,
+      members: t.members,
+      created_at: t.created_at
+    }));
+
+    console.log('   ✅ Equipos retornados exitosamente');
+    console.log('📋 ====================================\n');
+
+    res.json({ teams: mapped });
+  } catch (err) {
+    console.error('   ❌ Error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
