@@ -29,10 +29,12 @@ router.post('/', async (req, res) => {
     console.log('   Team oponente:', opponent_team_id);
 
     // Convertir a ObjectId con validación
-    let opponentObjectId, currentUserObjectId;
+    let opponentObjectId, currentUserObjectId, challengerTeamObjectId, opponentTeamObjectId;
     try {
       opponentObjectId = new mongoose.Types.ObjectId(opponent_id);
       currentUserObjectId = new mongoose.Types.ObjectId(req.user.id);
+      challengerTeamObjectId = new mongoose.Types.ObjectId(challenger_team_id);
+      opponentTeamObjectId = new mongoose.Types.ObjectId(opponent_team_id);
     } catch (err) {
       console.log('   ❌ ID inválido - no es ObjectId válido');
       return res.status(400).json({ error: 'Invalid opponent_id or user_id format' });
@@ -53,10 +55,10 @@ router.post('/', async (req, res) => {
     }
 
     // Verify teams exist and belong to correct users
-    const challengerTeam = await Team.findOne({ _id: challenger_team_id, user_id: currentUserObjectId });
+    const challengerTeam = await Team.findOne({ _id: challengerTeamObjectId, user_id: currentUserObjectId });
     console.log('   Equipo retador encontrado:', !!challengerTeam);
 
-    const opponentTeam = await Team.findOne({ _id: opponent_team_id, user_id: opponentObjectId });
+    const opponentTeam = await Team.findOne({ _id: opponentTeamObjectId, user_id: opponentObjectId });
     console.log('   Equipo oponente encontrado:', !!opponentTeam);
 
     if (!challengerTeam) {
