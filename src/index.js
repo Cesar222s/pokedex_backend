@@ -22,16 +22,54 @@ const connectDB = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+function normalizeOrigin(value) {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    // Normalize protocol/host/port and remove trailing slash differences.
+    return new URL(trimmed).origin.toLowerCase();
+  } catch {
+    return trimmed.replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+const localOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:4173'
+];
+
+const envOrigins = [
+  ...(process.env.CORS_ORIGINS || '').split(','),
+  ...(process.env.FRONTEND_URL || '').split(',')
+]
+  .map((origin) => normalizeOrigin(origin))
+  .filter(Boolean);
+
+const allowedOrigins = [...new Set([
+  ...localOrigins.map((origin) => normalizeOrigin(origin)),
+  ...envOrigins
+])];
+
 // Conectar a MongoDB
 connectDB();
 
 // Middlewares
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:4173'
-  ],
+  origin: (origin, callback) => {
+    const normalizedOrigin = normalizeOrigin(origin);
+
+    // Allow non-browser calls (curl, health checks) and configured browser origins.
+    if (!origin || (normalizedOrigin && allowedOrigins.includes(normalizedOrigin))) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true
 }));
 
@@ -56,6 +94,14 @@ app.get('/api/health', (req, res) => {
 
 // Servir frontend (si existe carpeta public)
 app.use(express.static(path.join(__dirname, '../public')));
+
+// Respuesta consistente para rutas API no existentes.
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    error: 'API route not found',
+    path: req.originalUrl
+  });
+});
 
 // ⚠️ IMPORTANTE: Para que Vue (Single Page Application) funcione en Express 5.x
 // Dado que Express 5 ya no usa '*' para comodines absolutos en path-to-regexp v8,
